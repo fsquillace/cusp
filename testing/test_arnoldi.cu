@@ -123,14 +123,6 @@ public:
 	void test_host_arnoldi()
 	{
 
-		if(typeid(host_mat_def_pos[0])==typeid(cusp::detail::matrix_base<IndexType, \
-				ValueType, cusp::host_memory, cusp::csr_format>))
-			printf("It's a Matrix!!!!!\n");
-
-		printf("id1=%s\n",typeid(&(host_mat_def_pos[0])).name());
-		printf("id2=%s\n",typeid(cusp::detail::matrix_base<IndexType, \
-				ValueType, cusp::host_memory, cusp::csr_format>).name());
-
 		for(size_t i=0; i<path_def_pos.size(); i++){
 
 			size_t m = 10;

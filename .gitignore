@@ -2,3 +2,5 @@
 .cproject
 test_arnoldi
 eigen
+Makefile
+makefile
