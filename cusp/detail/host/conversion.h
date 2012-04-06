@@ -507,6 +507,198 @@ void hyb_to_csr(const Matrix1& src, Matrix2& dst)
 }
 
 
+void merge(int* vec, int* vec2, int start, int med, int stop){
+    int* a = new int[stop-start+1];
+    int* a2 = new int[stop-start+1];
+
+    int i1 = start; int i2 = med+1; int i3 = 0;
+    for (; (i1 <= med)&&(i2 <= stop); i3++ )
+        if ( vec[i1]>vec[i2]){
+            a[i3]=vec[i1];
+            a2[i3]=vec2[i1];
+            i1++;
+        }
+        else{
+            a[i3]=vec[i2];
+            a2[i3]=vec2[i2];
+            i2++;
+        }
+    for ( ; i1 <= med; i1++, i3++ ){
+        a[i3] = vec[i1];
+        a2[i3] = vec2[i1];
+    }
+    for ( ; i2 <= stop; i2++, i3++ ){
+        a[i3] = vec[i2];
+        a2[i3] = vec2[i2];
+    }
+    for ( i3 = 0, i1 = start; i1 <= stop; i3++, i1++ ){
+        vec[i1] = a[i3];
+        vec2[i1] = a2[i3];
+//        printf("merge: vec[%d]:%d start:%d med:%d stop:%d\n", i1, vec[i1], start, med, stop);
+    }
+
+    delete [] a;
+    delete [] a2;
+
+}
+
+void mergesort(int* vec, int* vec2, int start, int stop){
+    if(stop<=start){
+        return;
+    }
+    int med = start + (stop-start)/2;
+    mergesort(vec, vec2, start, med);
+    mergesort(vec, vec2, med+1, stop);
+    merge(vec, vec2, start, med, stop);
+
+}
+
+
+
+
+/////////////////////
+// JAD Conversions //
+/////////////////////
+
+template <typename Matrix1, typename Matrix2>
+void csr_to_jad(const Matrix1& src, Matrix2& dst)
+{
+    typedef typename Matrix2::index_type IndexType;
+    typedef typename Matrix2::value_type ValueType;
+
+printf("begin: calculate permutation\n");
+
+    // Permutation of src csr_jagged=f(src)
+    cusp::array1d<IndexType, cusp::host_memory> num_entries_vec(src.num_rows);
+    cusp::array1d<IndexType, cusp::host_memory> permutations(src.num_rows);
+
+
+    for(int i=0; i<src.num_rows; i++){
+        num_entries_vec[i] = src.row_offsets[i+1] - src.row_offsets[i];
+        permutations[i] = i;
+//        printf("num_entries_vec[%d]:%d\n", i, num_entries_vec[i]);
+    }
+
+    mergesort(thrust::raw_pointer_cast(&num_entries_vec[0]), thrust::raw_pointer_cast(&permutations[0]),
+              0, src.num_rows-1);
+
+
+
+//    for(int i=0; i<src.num_rows; i++){
+//        printf("num_entries_vec[%d]:%d\n", i, num_entries_vec[i]);
+//    }
+//    for(int i=0; i<src.num_rows; i++){
+//        printf("permutations[%d]:%d\n", i, permutations[i]);
+//    }
+
+
+printf("end: calculate permutation\n");
+
+//    for(int i=0; i<src.num_rows; i++){
+//        for(int j=i+1; j<src.num_rows; j++){
+//            if(num_entries_vec[j]>num_entries_vec[i]){
+//                const size_t tmp = num_entries_vec[i];
+//                num_entries_vec[i] = num_entries_vec[j];
+//                num_entries_vec[j] = tmp;
+//
+//                const size_t tmp_ind = permutations[i];
+//                permutations[i] = permutations[j];
+//                permutations[j] = tmp_ind;
+//
+//            }
+//        }
+////        printf("permutations[%d]:%d\n", i, permutations[i]);
+//
+//    }
+
+printf("begin: csr_jagged\n");
+    // build the csr permutated matrix
+    cusp::csr_matrix<IndexType, ValueType, cusp::host_memory> csr_jagged;
+    csr_jagged.resize(src.num_rows, src.num_cols, src.num_entries);
+
+    size_t sum_lenght = 0;
+    for(int i=0; i<src.num_rows; i++){
+        csr_jagged.row_offsets[i] = sum_lenght;
+//        printf("row_offsets[%d]:%d\n", i, csr_jagged.row_offsets[i]);
+        sum_lenght += src.row_offsets[permutations[i]+1] - src.row_offsets[permutations[i]];
+    }
+    csr_jagged.row_offsets[src.num_rows] = sum_lenght; // The last
+
+    for(int i=0; i<src.num_rows; i++){
+        IndexType start_src = src.row_offsets[permutations[i]];
+        IndexType stop_src = src.row_offsets[permutations[i]+1];
+
+        IndexType start_jad = csr_jagged.row_offsets[i];
+        IndexType stop_jad = csr_jagged.row_offsets[i+1];
+
+        for(IndexType jj_src=start_src, jj_jad=start_jad; jj_src<stop_src && jj_jad<stop_jad; jj_src++, jj_jad++){
+
+            csr_jagged.values[jj_jad] = src.values[jj_src];
+            csr_jagged.column_indices[jj_jad] = src.column_indices[jj_src];
+
+//            printf("values[%d]:%f\n", jj_jad, csr_jagged.values[jj_jad]);
+//            printf("column_indices[%d]:%d\n", jj_jad, csr_jagged.column_indices[jj_jad]);
+
+        }
+    }
+printf("end: csr_jagged\n");
+
+//    cusp::csr_matrix<IndexType, ValueType, cusp::host_memory> csr_identity_perm;
+//    csr_identity_perm.resize(src.num_rows, src.num_rows, src.num_rows);
+//    for(int i=0; i<src.num_rows; i++){
+//        csr_identity_perm.row_offsets[i]=i;
+//        csr_identity_perm.column_indices[i]= permutations[i];
+//        csr_identity_perm.values[i]=ValueType(1);
+////        printf("identity_perm(%d,%d):%d\n", i, permutations[i], identity_perm(i, permutations[i]));
+//    }
+//    csr_identity_perm.row_offsets[src.num_rows]=src.num_rows;
+//
+//    cusp::detail::host::multiply(csr_identity_perm, src, csr_jagged); // Unfortunately entries within the same row are reverse sorted
+
+//    for(int i=0; i<csr_jagged.num_rows; i++){
+//        printf("csr_jagged.row_offsets[%d]:%d\n", i, csr_jagged.row_offsets[i]);
+//        for(int jj=csr_jagged.row_offsets[i]; jj<csr_jagged.row_offsets[i+1]; jj++){
+//            printf("csr_jagged.column_indices[%d]:%d\n", jj, csr_jagged.column_indices[jj]);
+//            printf("csr_jagged.values[%d]:%f\n", jj, csr_jagged.values[jj]);
+//        }
+//    }
+printf("begin: dst\n");
+    // Calculate the conversion
+    size_t num_jagged_diagonals = csr_jagged.row_offsets[1] - csr_jagged.row_offsets[0];
+    dst.resize(src.num_rows, src.num_cols, src.num_entries, num_jagged_diagonals);
+    cusp::copy(permutations, dst.permutations);
+    // pad out ELL format with zeros
+    thrust::fill(dst.column_indices.begin(), dst.column_indices.end(), ValueType(-1));
+    thrust::fill(dst.values.begin(),         dst.values.end(),         ValueType(0));
+    size_t counter = 0;
+    for(size_t d=0; d<num_jagged_diagonals; d++){
+        dst.diagonal_offsets[d] = counter;
+//        printf("diagonal_offsets[%d]:%d\n", d, dst.diagonal_offsets[d]);
+        for(size_t i = 0; i < csr_jagged.num_rows; i++)
+        {
+            IndexType lenght_row = csr_jagged.row_offsets[i+1] - csr_jagged.row_offsets[i];
+            if(d<lenght_row){
+                IndexType jj = csr_jagged.row_offsets[i]+d;  //(lenght_row-1-d); // To fix the reversed sorted of the entries we use (lenght-d)
+                dst.values[counter] = csr_jagged.values[jj];
+                dst.column_indices[counter] = csr_jagged.column_indices[jj];
+//                printf("column_indices[%d]:%d\n", counter, dst.column_indices[counter]);
+//                printf("values[%d]:%f\n", counter, dst.values[counter]);
+                counter++;
+            }
+        }
+    }
+    dst.diagonal_offsets[num_jagged_diagonals]=counter;
+//    printf("diagonal_offsets[%d]:%d\n", num_jagged_diagonals, dst.diagonal_offsets[num_jagged_diagonals]);
+printf("end: dst\n");
+
+printf("num_jagged_diagonals:%d\n", num_jagged_diagonals);
+
+}
+
+
+
+
+
 /////////////////////////
 // Array1d Conversions //
 /////////////////////////

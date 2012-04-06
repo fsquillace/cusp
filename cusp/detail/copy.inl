@@ -91,6 +91,20 @@ void copy(const T1& src, T2& dst,
 
 template <typename T1, typename T2>
 void copy(const T1& src, T2& dst,
+          cusp::jad_format,
+          cusp::jad_format)
+{
+    dst.resize(src.num_rows, src.num_cols, src.num_entries, src.num_jagged_diagonals);
+
+    cusp::copy(src.permutations, dst.permutations);
+    cusp::copy(src.diagonal_offsets, dst.diagonal_offsets);
+    cusp::copy(src.values, dst.values);
+    cusp::copy(src.column_indices, dst.column_indices);
+}
+
+
+template <typename T1, typename T2>
+void copy(const T1& src, T2& dst,
           cusp::array1d_format,
           cusp::array1d_format)
 {    

@@ -208,6 +208,31 @@ void convert(const Matrix1& src, Matrix2& dst,
     cusp::convert(csr, dst);
 }
 
+///////////////
+// JAD //
+///////////////
+template <typename Matrix1, typename Matrix2>
+void convert(const Matrix1& src, Matrix2& dst,
+             cusp::csr_format,
+             cusp::jad_format)
+{
+    cusp::detail::host::csr_to_jad(src, dst);
+}
+
+template <typename Matrix1, typename Matrix2, typename MatrixFormat1>
+void convert(const Matrix1& src, Matrix2& dst,
+             MatrixFormat1,
+             cusp::jad_format)
+{
+    typedef typename Matrix1::index_type IndexType;
+    typedef typename Matrix1::value_type ValueType;
+    cusp::csr_matrix<IndexType,ValueType,cusp::host_memory> csr;
+    cusp::convert(src, csr);
+    cusp::convert(csr, dst);
+}
+
+
+
 /////////////
 // Array1d //
 /////////////

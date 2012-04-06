@@ -1,6 +1,7 @@
 .project
 .cproject
-test_arnoldi
 eigen
 Makefile
 makefile
+test_arnoldi
+test_jad

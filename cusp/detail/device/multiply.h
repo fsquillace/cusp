@@ -25,6 +25,7 @@
 #include <cusp/detail/device/spmv/dia.h>
 #include <cusp/detail/device/spmv/ell.h>
 #include <cusp/detail/device/spmv/hyb.h>
+#include <cusp/detail/device/spmv/jad.h>
 
 // SpMM
 #include <cusp/detail/device/spmm/coo.h>
@@ -55,6 +56,24 @@ namespace device
 ///////////////////////////////////
 // Sparse Matrix-Vector Multiply //
 ///////////////////////////////////
+template <typename Matrix,
+          typename Vector1,
+          typename Vector2>
+void multiply(const Matrix&  A,
+              const Vector1& B,
+                    Vector2& C,
+              cusp::jad_format,
+              cusp::array1d_format,
+              cusp::array1d_format)
+{
+#ifdef CUSP_USE_TEXTURE_MEMORY
+    cusp::detail::device::spmv_jad_tex(A, thrust::raw_pointer_cast(&B[0]), thrust::raw_pointer_cast(&C[0]));
+#else
+    cusp::detail::device::spmv_jad(A, thrust::raw_pointer_cast(&B[0]), thrust::raw_pointer_cast(&C[0]));
+#endif
+}
+
+
 template <typename Matrix,
           typename Vector1,
           typename Vector2>

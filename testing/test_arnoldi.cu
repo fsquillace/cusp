@@ -15,7 +15,6 @@
 
 #include <cusp/csr_matrix.h>
 #include <cusp/io/matrix_market.h>
-#include <string.h>
 #include <cusp/print.h>
 #include <cusp/multiply.h>
 #include <cusp/transpose.h>
