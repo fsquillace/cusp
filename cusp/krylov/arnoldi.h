@@ -145,7 +145,7 @@ void arnoldi(const Matrix& A, Array2d& H, size_t k = 10)
 
 
 template <typename Matrix, typename Array1d, typename Array2d>
-void arnoldi(const Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t start, const size_t m)
+void arnoldi(Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t start, const size_t m)
 {
     /*
      *
@@ -186,12 +186,8 @@ void arnoldi(const Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t s
 
         // Remember that w = f the residual
         // w = A*V(:, 0)
-//        if(typeid(A) == typeid(cusp::matrix_base)){ // it means that it's a matrix
-        	cusp::multiply(A, V_[0], f);
-//        }
-//        else{ // it means that it's a function
-//        	A(V_[0], f);
-//        }
+        cusp::multiply(A, V_[0], f);
+
 
         // H(0, 0) = V(:, 0)*w
         H(0,0) = cusp::blas::dot(V_[0], f);
