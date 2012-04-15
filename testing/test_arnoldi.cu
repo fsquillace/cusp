@@ -399,7 +399,7 @@ public:
 			HostVector_array1d eigvals;
 			HostVector_array1d y1, eigvec(m);
 
-			cusp::krylov::implicitly_restarted_arnoldi(host_mat_def_pos[i],\
+			cusp::krylov::iram(host_mat_def_pos[i],\
 					eigvals, eigvects, k, 0);
 
 
@@ -432,7 +432,7 @@ public:
 			DeviceVector_array1d eigvals;
 			HostVector_array1d y1, eigvec(m);
 
-			cusp::krylov::implicitly_restarted_arnoldi(dev_mat_def_pos[i],\
+			cusp::krylov::iram(dev_mat_def_pos[i],\
 					eigvals, eigvects, k, 0);
 
 
@@ -446,7 +446,7 @@ public:
 				j_str << j;
 				eigval_str << eigvals[j];
 
-				ValueType errRel = nrmVector("host_iram eigval["+j_str.str()+"]:"+eigval_str.str()+" "+path_def_pos[i], y1, eigvec);
+				ValueType errRel = nrmVector("device_iram eigval["+j_str.str()+"]:"+eigval_str.str()+" "+path_def_pos[i], y1, eigvec);
 				CPPUNIT_ASSERT( errRel < 1.0e-2 );
 
 			}

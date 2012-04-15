@@ -306,9 +306,10 @@ void shifted_qr(Array2d& H, Array2d& V, Array1d& mu, size_t p, typename Array2d:
 
 
 template <typename Matrix, typename Array2d, typename Array1d>
-void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals,\
+void iram(Matrix& A, Array1d& eigvals,\
 		Array2d& eigvects, size_t k, size_t m, cusp::column_major){
     /*
+     * Compute the Implicitly Restarted Arnoldi Method
      * It works only if array2d is defined column_major
      *
      */
@@ -318,6 +319,16 @@ void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals,\
 
     // TODO Solve double problem in iram
     // TODO Solve round-off error
+
+    // Calculate the machine precision
+    ValueType machEps = 1.0f;
+    do {
+       machEps /= 2.0f;
+       // If next epsilon yields 1, then break, because current
+       // epsilon is the machine epsilon.
+    }
+    while ((float)(1.0 + (machEps/2.0)) != 1.0);
+
 
     size_t N = A.num_rows;
     size_t p = m-k; // to default p = k+1
@@ -368,7 +379,7 @@ void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals,\
         }
 
 
-        nc = nconv(eigvals, eigvects_H, perm, f, k, ValueType(1.0e-6));
+        nc = nconv(eigvals, eigvects_H, perm, f, k, ValueType(1.0e-6), machEps*cusp::blas::nrm2(H.values));
         if(nc == k || iter >= maxiter)
             break;
 
@@ -414,7 +425,7 @@ void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals,\
 }
 
 template <typename Array2d, typename Array1d, typename Array1dInt, typename ValueType>
-size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, size_t k, ValueType tol){
+size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, size_t k, ValueType tol, ValueType eps){
     // the number of eigvals is equal to the number k (but not m) of required eigvals.
     // eigvals is already ordered, eigvects needs the perm vector
     // eigvals (mx1)
@@ -427,11 +438,12 @@ size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, 
     size_t m = eigvects.num_rows;
     float err_tot = 0.0;
 
+
     for(size_t i=m-1; i>=m-k; i--){
         const ValueType err = cusp::blas::nrm2(f)*std::abs(eigvects(m-1, perm[i]));
         err_tot = err_tot + err;
 
-        if(err < tol*std::abs(eigvals[i]))
+        if(err < std::max(eps, tol*std::abs(eigvals[i])))
             nconv++;
     }
 
@@ -445,7 +457,7 @@ size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, 
 
 // Entry point
 template <typename Matrix, typename Array2d, typename Array1d>
-void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals, Array2d& eigvects, size_t k, size_t m){
+void iram(Matrix& A, Array1d& eigvals, Array2d& eigvects, size_t k, size_t m){
 	/*
      * If m=0 the value will be changed in 2*k+1
 	 */
@@ -453,7 +465,7 @@ void implicitly_restarted_arnoldi(Matrix& A, Array1d& eigvals, Array2d& eigvects
     // Set the default value
     if(m==0) m = std::min(2*k +1, A.num_rows);
 
-	return implicitly_restarted_arnoldi(A, eigvals, eigvects, k, m, typename Array2d::orientation());
+	return iram(A, eigvals, eigvects, k, m, typename Array2d::orientation());
 }
 
 
