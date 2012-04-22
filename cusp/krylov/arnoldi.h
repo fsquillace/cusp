@@ -285,7 +285,7 @@ void shifted_qr(Array2d& H, Array2d& V, Array1d& mu, size_t p, typename Array2d:
 
 		// H=Q'*H*Q
 		cuspla::gemm(Q,H,Mtmp, ValueType(1),ValueType(0),true,false);
-		// all the following products are wrong!!
+
 		cuspla::gemm(Mtmp,Q,H, ValueType(1),ValueType(0),false,false);
 
 		// V = V*Q
@@ -316,9 +316,6 @@ void iram(Matrix& A, Array1d& eigvals,\
 
     typedef typename Array2d::memory_space MemorySpace;
     typedef typename Array2d::value_type   ValueType;
-
-    // TODO Solve double problem in iram
-    // TODO Solve round-off error
 
     // Calculate the machine precision
     ValueType machEps = 1.0f;
@@ -357,7 +354,7 @@ void iram(Matrix& A, Array1d& eigvals,\
         arnoldi(A, H, V, f, k-1, m);
 
         cusp::copy(H, H_);
-        cuspla::geev(H_, eigvals, eigvects_H);
+        cuspla::geev(H_, eigvals, eigvects_H); // TODO Try to apply the Schur form from H matrix
 
         // Selects the last p elements
         // sort the elements of perm to 0, 1, 2, ...
