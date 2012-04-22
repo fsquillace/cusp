@@ -145,7 +145,8 @@ void arnoldi(const Matrix& A, Array2d& H, size_t k = 10)
 
 
 template <typename Matrix, typename Array1d, typename Array2d>
-void arnoldi(Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t start, const size_t m)
+void arnoldi(Matrix& A, Array2d& H, Array2d& V,\
+		Array1d& f, const size_t start, const size_t m)
 {
     /*
      *
@@ -181,18 +182,27 @@ void arnoldi(Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t start, 
         // initialize starting vector to random values in [0,1)
         cusp::copy(cusp::detail::random_reals<ValueType>(N), V_[0]);
         // normalize v0
-        ValueType nrm = ValueType(1) / cusp::blas::nrm2(V_[0]);
-        cusp::blas::scal(V_[0], nrm);
+        ValueType beta = ValueType(1) / cusp::blas::nrm2(V_[0]);
+        cusp::blas::scal(V_[0], beta);
 
         // Remember that w = f the residual
         // w = A*V(:, 0)
         cusp::multiply(A, V_[0], f);
 
+        beta = ValueType(1) / cusp::blas::nrm2(V_[0]);
+        cusp::blas::scal(V_[0], beta);
 
         // H(0, 0) = V(:, 0)*w
         H(0,0) = cusp::blas::dot(V_[0], f);
         //f = w-V(:,0)*H(0,0)
         cusp::blas::axpy(V_[0], f, -H(0,0));
+
+        // Perform one step of iterative refinement
+        // to correct any orthogonality problems
+        ValueType alpha = cusp::blas::dot(V_[0], f);
+        cusp::blas::axpy(V_[0], f, -alpha);
+
+        H(0,0) = H(0,0) + alpha;
 
 
     }
@@ -249,7 +259,8 @@ void arnoldi(Matrix& A, Array2d& H, Array2d& V, Array1d& f, const size_t start, 
 
 
 template< typename Array2d, typename Array1d>
-void shifted_qr(Array2d& H, Array2d& V, Array1d& mu, size_t p, typename Array2d::value_type& sigma){
+void shifted_qr(Array2d& H, Array2d& V, Array1d& mu, size_t p,\
+		typename Array2d::value_type& sigma){
 // TODO optimize shift QR by using directly the Householder reflectors instead of QR
 	typedef typename Array2d::value_type   ValueType;
 
@@ -307,7 +318,10 @@ void shifted_qr(Array2d& H, Array2d& V, Array1d& mu, size_t p, typename Array2d:
 
 template <typename Matrix, typename Array2d, typename Array1d>
 void iram(Matrix& A, Array1d& eigvals,\
-		Array2d& eigvects, size_t k, size_t m, cusp::column_major){
+		Array2d& eigvects, size_t k, size_t m,\
+		double tol, size_t maxit,
+		cusp::column_major){
+
     /*
      * Compute the Implicitly Restarted Arnoldi Method
      * It works only if array2d is defined column_major
@@ -317,6 +331,22 @@ void iram(Matrix& A, Array1d& eigvals,\
     typedef typename Array2d::memory_space MemorySpace;
     typedef typename Array2d::value_type   ValueType;
 
+    size_t N = A.num_rows;
+    size_t iter = 0;
+    size_t kconv; // number converged
+    timer t;
+
+    // Trick to get faster convergence.  The tail end (closest to cut off
+    // of the sort) will not converge as fast as the leading end of the
+    // "wanted" Ritz values.
+    // In this way we can also modify k
+    // according to the strategy used
+    size_t ksave = k;
+    size_t psave = m-k;
+    k = std::min(N-1,k+3);
+    size_t p = m-k; // to default p = k+1
+
+
     // Calculate the machine precision
     ValueType machEps = 1.0f;
     do {
@@ -325,14 +355,6 @@ void iram(Matrix& A, Array1d& eigvals,\
        // epsilon is the machine epsilon.
     }
     while ((float)(1.0 + (machEps/2.0)) != 1.0);
-
-
-    size_t N = A.num_rows;
-    size_t p = m-k; // to default p = k+1
-
-    size_t maxiter = 100;
-    size_t iter = 0;
-
 
 
     Array2d H(m, m, ValueType(0));
@@ -346,25 +368,23 @@ void iram(Matrix& A, Array1d& eigvals,\
 
     arnoldi(A, H, V, f, 0, k);
 
-    // number converged
-    size_t nc;
-    timer t;
+
+
     do{
 
         arnoldi(A, H, V, f, k-1, m);
 
         cusp::copy(H, H_);
-        cuspla::geev(H_, eigvals, eigvects_H); // TODO Try to apply the Schur form from H matrix
+        cuspla::geev(H_, eigvals, eigvects_H);
 
-        // Selects the last p elements
-        // sort the elements of perm to 0, 1, 2, ...
+        // Sort in ascending order
+        // eigvals and perm will be modified
         thrust::sequence(perm.begin(), perm.end());
         thrust::sort_by_key(eigvals.begin(), eigvals.end(), perm.begin());
 
-
         // We need to normalize among the columns of eigvects_H
         for(size_t j=0; j<m; j++){
-        	//thrust::copy(eigvects_H.values.begin()+ j*N, eigvects_H.values.begin()+ (j+1)*N, evect.begin());
+        	// alpha=1/eigvects(:,j)
         	ValueType alpha = ValueType(1) / cusp::blas::nrm2(eigvects_H.values.begin()+ j*m,\
         			eigvects_H.values.begin()+ (j+1)*m);
 
@@ -376,22 +396,29 @@ void iram(Matrix& A, Array1d& eigvals,\
         }
 
 
-        nc = nconv(eigvals, eigvects_H, perm, f, k, ValueType(1.0e-6), machEps*cusp::blas::nrm2(H.values));
-        if(nc == k || iter >= maxiter)
-            break;
+        kconv = nconv(eigvals, eigvects_H, perm, f, k, tol, machEps*cusp::blas::nrm2(H.values));
 
-        // Apply increased k
-//        nc = std::min(nc, p/2);
-//        if(p-nc==ValueType(0))
-//            break;
+        if(kconv >= ksave || iter >= maxit){
+            break;
+        }
+
+
+        // If some ritz values have converged then
+        // adjust k and p to move the "boundary"
+        // of the filter cutoff.
+        if(kconv > 0){
+             size_t kk = ksave + 3 + kconv;
+             p = std::max(size_t(psave/3), m-kk);
+             k = m - p;
+        }
+
+
 
         ValueType sigma;
-        shifted_qr(H, V, eigvals, p-nc, sigma);
+        shifted_qr(H, V, eigvals, p-kconv, sigma);
 
         //f(k-1) = V(:, k)*beta + f(m-1)*sigma(k-1)
         ValueType beta = H(k, k-1);
-
-
         cusp::blas::axpby(V.values.begin()+N*(k), \
                 V.values.begin()+N*(k+1), f.begin(), \
                 f.begin(), beta, sigma);
@@ -401,28 +428,42 @@ void iram(Matrix& A, Array1d& eigvals,\
 
     }while(true);
 
-    cudaThreadSynchronize();
     float t_iter = t.seconds_elapsed();
     printf("t_iter=%f\n", t_iter/iter);
 
     // Shrinks eigvals to the first k elements
-    thrust::copy(eigvals.begin()+p, eigvals.end(), eigvals.begin());
-    eigvals.resize(k);
+    thrust::copy(eigvals.begin()+psave, eigvals.end(), eigvals.begin());
+    eigvals.resize(ksave);
 
 
     // This below takes a lot of time!
-    Array2d eigvects_tmp(m, k);
-    for(size_t j=0; j<k; j++){
-        thrust::copy(eigvects_H.values.begin()+m*perm[m-k +j],\
-        		eigvects_H.values.begin()+m*perm[m-k +j]+m, eigvects_tmp.values.begin()+m*j);
+    Array2d eigvects_tmp(m, ksave);
+    for(size_t j=0; j<ksave; j++){
+        thrust::copy(eigvects_H.values.begin()+m*perm[m-ksave +j],\
+        		eigvects_H.values.begin()+m*perm[m-ksave +j]+m,\
+        		eigvects_tmp.values.begin()+m*j);
     }
+
     cuspla::gemm(V, eigvects_tmp, eigvects, ValueType(1));
-    eigvects.resize(N, k);
+    eigvects.resize(N, ksave);
+
+    // Normalize eigvects
+    for(size_t j=0; j<ksave; j++){
+    	// alpha=1/eigvects(:,j)
+    	ValueType alpha = ValueType(1) / cusp::blas::nrm2(eigvects.values.begin()+ j*N,\
+    			eigvects.values.begin()+ (j+1)*N);
+
+        thrust::for_each(eigvects.values.begin()+ j*N, eigvects.values.begin()+ (j+1)*N,\
+        		cuspla::mul_const<ValueType>(alpha));
+    }
 
 }
 
-template <typename Array2d, typename Array1d, typename Array1dInt, typename ValueType>
-size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, size_t k, ValueType tol, ValueType eps){
+template <typename Array2d, typename Array1d, \
+typename Array1dInt, typename ValueType>
+size_t nconv(Array1d& eigvals, Array2d& eigvects,\
+		Array1dInt& perm, Array1d& f, size_t k, \
+		double tol, ValueType eps){
     // the number of eigvals is equal to the number k (but not m) of required eigvals.
     // eigvals is already ordered, eigvects needs the perm vector
     // eigvals (mx1)
@@ -435,14 +476,20 @@ size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, 
     size_t m = eigvects.num_rows;
     float err_tot = 0.0;
 
-
+    //The while loop counts the number of converged ritz values.
     for(size_t i=m-1; i>=m-k; i--){
-        const ValueType err = cusp::blas::nrm2(f)*std::abs(eigvects(m-1, perm[i]));
+        const ValueType err=\
+        		cusp::blas::nrm2(f)*std::abs(eigvects(m-1, perm[i]));
         err_tot = err_tot + err;
 
-        if(err < std::max(eps, tol*std::abs(eigvals[i])))
+        if(err <= std::max(eps, ValueType(tol)*std::abs(eigvals[i])))
             nconv++;
+        else
+        	break;
     }
+
+
+    // TODO include the ritzests values such as in eigs.m and the other stop criterion
 
 #ifdef VERBOSE
     printf("nconv=%d err_avg=%f\n",nconv, err_tot/k);
@@ -454,15 +501,71 @@ size_t nconv(Array1d& eigvals, Array2d& eigvects, Array1dInt& perm, Array1d& f, 
 
 // Entry point
 template <typename Matrix, typename Array2d, typename Array1d>
-void iram(Matrix& A, Array1d& eigvals, Array2d& eigvects, size_t k, size_t m){
-	/*
-     * If m=0 the value will be changed in 2*k+1
-	 */
+void iram(Matrix& A, Array1d& eigvals, Array2d& eigvects,\
+		size_t k=0, size_t m=0, double tol=1e-6,\
+		size_t maxit=0){
+    /*
+     * Input:
+     * k - Number of desired eigenvalues.
+     *     If k==0 or not defined to default k=min(n, 6).
+     *
+     * m - Krylov basis dimension.
+     *     If m==0 or not defined to default
+     *     m=min(max(2*k+1, 20), n).
+     *
+     * maxit - Maximum number of iterations.
+     *         If maxit==0 or not defined to default
+     *         maxit=max(300, 2*n/p).
+    */
 
-    // Set the default value
-    if(m==0) m = std::min(2*k +1, A.num_rows);
+	typedef typename Array2d::value_type ValueType;
 
-	return iram(A, eigvals, eigvects, k, m, typename Array2d::orientation());
+    if(A.num_rows!=A.num_cols){
+        printf("Error: Matrix A must be squared\n");
+        return;
+    }
+
+
+    if(k==0)
+        k=std::min(A.num_rows, size_t(6));
+
+    if(m==0){
+    	m = std::min(std::max(2*k+1,size_t(20)),A.num_rows);
+    }
+
+    if(maxit==0)
+    	maxit = std::max(size_t(300),2*A.num_rows/m);
+
+    // A is the matrix of all zeros
+    if(A.num_entries==0){
+        eigvals.resize(k);
+        eigvects.resize(A.num_rows, k);
+        thrust::fill(eigvals.begin(), eigvals.end(), ValueType(0));
+        // Adds 1 of each element of the diagonal
+        thrust::counting_iterator<int> stencil (0);
+        thrust::transform_if(\
+        		eigvects.values.begin(), \
+        		eigvects.values.end(), \
+                stencil, \
+                eigvects.values.begin(), \
+                cuspla::assigns<ValueType>(ValueType(1)), \
+                cuspla::in_diagonal(\
+                		eigvects.num_rows,\
+                		eigvects.num_cols));
+    }
+
+    if(k<0 || k > A.num_rows-1){
+        printf("Error: k must be an integer between 0 and n.\n");
+        return;
+    }
+    else if(m > A.num_rows-1){
+        printf("Error: m must be lesser or equals than n.\n");
+        return;
+    }
+
+	return iram(A, eigvals, eigvects, k, m,\
+			tol, maxit,\
+			typename Array2d::orientation());
 }
 
 
